@@ -1,26 +1,40 @@
 import os
-from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+import threading
+from flask import Flask
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-load_dotenv()
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN missing")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Bot is live ✅\nSend a club or player name (eg: Barcelona, Ronaldo)."
-    )
+# -----------------------
+# Flask app (Render needs this)
+# -----------------------
+app = Flask(__name__)
 
-def main():
-    app = Application.builder().token(TOKEN).build()
+@app.route("/")
+def home():
+    return "Bot is running"
 
-    app.add_handler(CommandHandler("start", start))
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
-    print("🤖 Bot started successfully")
-    app.run_polling()  # ⬅️ THIS IS BLOCKING AND CORRECT
+# -----------------------
+# Telegram bot logic
+# -----------------------
+async def start(update, context):
+    await update.message.reply_text("Bot is live ✅")
 
+def run_bot():
+    application = Application.builder().token(TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.run_polling()
+
+# -----------------------
+# Main
+# -----------------------
 if __name__ == "__main__":
-    main()
+    threading.Thread(target=run_flask).start()
+    run_bot()
