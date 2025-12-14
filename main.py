@@ -1,41 +1,32 @@
 import os
-import logging
-from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+import asyncio
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO)
+load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN missing")
 
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update, context):
     await update.message.reply_text(
-        "Bot is live ✅\nType a club or player name (e.g. Barcelona, Ronaldo)"
+        "Bot is live ✅\nType a club or player name (eg: Barcelona, Ronaldo)"
     )
 
+async def echo(update, context):
+    text = update.message.text
+    await update.message.reply_text(f"You typed: {text}")
 
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()
-    await update.message.reply_text(f"You searched for: {text}")
-
-
-def main():
+async def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-    app.run_polling()
-
+    print("Bot started...")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
