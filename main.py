@@ -10,26 +10,26 @@ from telegram.ext import (
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
+# -------- Handlers --------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Bot is running ✅\nType a club name like: Barcelona"
+        "👋 Bot is running.\nSend a club or player name (e.g. Barcelona, Ronaldo)."
     )
 
-
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     await update.message.reply_text(f"You typed: {text}")
 
+# -------- App --------
 
 def main():
-    app = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    app.run_polling()
-
+    application.run_polling()   # <-- THIS IS IMPORTANT
 
 if __name__ == "__main__":
     main()
