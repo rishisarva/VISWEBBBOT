@@ -1,62 +1,63 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-import os
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from woocommerce import get_products
+from search import search_products
 
-from wc_client import fetch_products
-from normalize import normalize_query
-from search import rank_products, extract_sizes
-from cache import get_cached, set_cache
+products_cache = get_products()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ALLOWED_USERS = list(map(int, os.getenv("ALLOWED_USERS").split(",")))
-
-PRODUCTS = fetch_products()
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ALLOWED_USERS:
-        return
-    await update.message.reply_text("Type club or player name")
-
-async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ALLOWED_USERS:
-        return
-
-    query = update.message.text
-    query_obj = normalize_query(query)
-
-    cache_key = f"{query_obj['type']}:{query_obj['value']}"
-    results = get_cached(cache_key)
+async def club(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = " ".join(context.args)
+    results = search_products(products_cache, query)
 
     if not results:
-        results = rank_products(PRODUCTS, query_obj)
-        set_cache(cache_key, results)
-
-    results = results[:5]
+        await update.message.reply_text("❌ No products found")
+        return
 
     for p in results:
-        sizes = extract_sizes(p)
-        btn = InlineKeyboardButton(
-            "Get Checkout Link",
-            callback_data=p["permalink"]
-        )
-        text = f"""🟢 {p['name']}
-₹{p['price']}
-Sizes: {', '.join(sizes) if sizes else 'N/A'}"""
+        sizes = []
+        for attr in p["attributes"]:
+            if attr["name"].lower() == "size":
+                sizes = attr["options"]
+
+        buttons = [
+            [InlineKeyboardButton("🛒 Get Checkout Link", callback_data=f"buy_{p['id']}")],
+            [InlineKeyboardButton("➕ Show More", callback_data=f"more_{query}")]
+        ]
 
         await update.message.reply_photo(
             photo=p["images"][0]["src"],
-            caption=text,
-            reply_markup=InlineKeyboardMarkup([[btn]])
+            caption=(
+                f"🏷 {p['name']}\n"
+                f"💰 ₹{p['price']}\n"
+                f"📏 Sizes: {', '.join(sizes) if sizes else 'Check site'}"
+            ),
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text(f"Checkout link:\n{query.data}")
+    query = update.callback_query.data
+    await update.callback_query.answer()
 
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_handler))
-app.add_handler(filters.CallbackQueryHandler(button_handler))
+    if query.startswith("buy_"):
+        pid = query.replace("buy_", "")
+        link = f"https://visionsjersey.com/?add-to-cart={pid}"
+        await update.callback_query.message.reply_text(f"🛒 Checkout link:\n{link}")
+
+    if query.startswith("more_"):
+        term = query.replace("more_", "")
+        context.args = term.split()
+        await club(update.callback_query.message, context)
+
+app = ApplicationBuilder().token(
+    __import__("os").getenv("TELEGRAM_BOT_TOKEN")
+).build()
+
+app.add_handler(CommandHandler("club", club))
+app.add_handler(CommandHandler("player", club))
+app.add_handler(CommandHandler("start", lambda u, c: u.message.reply_text("Use /club or /player")))
+
+app.add_handler(
+    __import__("telegram.ext").CallbackQueryHandler(button_handler)
+)
 
 app.run_polling()
