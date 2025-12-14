@@ -1,33 +1,41 @@
 import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from dotenv import load_dotenv
+import logging
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
-load_dotenv()
+logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(
-        "Bot is live ✅\n\nType a club or player name (example: barcelona / ronaldo)"
+if not TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN missing")
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Bot is live ✅\nType a club or player name (e.g. Barcelona, Ronaldo)"
     )
 
-def echo(update: Update, context: CallbackContext):
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
-    update.message.reply_text(f"You searched for: {text}")
+    await update.message.reply_text(f"You searched for: {text}")
+
 
 def main():
-    if not TOKEN:
-        raise ValueError("TELEGRAM_BOT_TOKEN missing")
+    app = Application.builder().token(TOKEN).build()
 
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
+    app.run_polling()
 
-    updater.start_polling()
-    updater.idle()
 
 if __name__ == "__main__":
     main()
