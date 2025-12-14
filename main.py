@@ -1,33 +1,34 @@
 import os
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from dotenv import load_dotenv
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
 load_dotenv()
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")
 
-def start(update: Update, context):
-    update.message.reply_text(
-        "Bot is running ✅\nSend a club or player name (e.g. Barcelona, Ronaldo)"
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Bot is running ✅\nSend a club or player name."
     )
 
-def echo(update: Update, context):
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
-    update.message.reply_text(f"You searched for: {text}")
+    await update.message.reply_text(f"You searched for: {text}")
 
 def main():
-    if not TOKEN:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN is missing")
+    application = Application.builder().token(TOKEN).build()
 
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
-
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
