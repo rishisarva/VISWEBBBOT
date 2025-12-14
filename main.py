@@ -1,40 +1,30 @@
+from flask import Flask, request
+import requests
 import os
-import threading
-from flask import Flask
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-
-if not TOKEN:
-    raise ValueError("TELEGRAM_BOT_TOKEN missing")
-
-# -----------------------
-# Flask app (Render needs this)
-# -----------------------
 app = Flask(__name__)
+
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+@app.route("/webhook", methods=["POST"])
+def telegram_webhook():
+    data = request.json
+
+    if "message" in data:
+        chat_id = data["message"]["chat"]["id"]
+        text = data["message"].get("text", "")
+
+        reply = f"You said: {text}"
+
+        requests.post(
+            f"{TELEGRAM_API}/sendMessage",
+            json={"chat_id": chat_id, "text": reply}
+        )
+
+    return "ok", 200
+
 
 @app.route("/")
 def home():
     return "Bot is running"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-# -----------------------
-# Telegram bot logic
-# -----------------------
-async def start(update, context):
-    await update.message.reply_text("Bot is live ✅")
-
-def run_bot():
-    application = Application.builder().token(TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.run_polling()
-
-# -----------------------
-# Main
-# -----------------------
-if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    run_bot()
