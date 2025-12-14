@@ -1,83 +1,62 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import os
 
-from wc import fetch_products
-from normalize import group_by_club
+from wc_client import fetch_products
+from normalize import normalize_query
+from search import rank_products, extract_sizes
+from cache import get_cached, set_cache
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+ALLOWED_USERS = list(map(int, os.getenv("ALLOWED_USERS").split(",")))
 
-PRODUCT_CACHE = {}
-CLUB_CACHE = {}
+PRODUCTS = fetch_products()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Type a club name (example: barcelona, man utd, real madrid)"
-    )
+    if update.effective_user.id not in ALLOWED_USERS:
+        return
+    await update.message.reply_text("Type club or player name")
 
-async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()
-
-    if not CLUB_CACHE:
-        products = fetch_products()
-        grouped = group_by_club(products)
-        CLUB_CACHE.update(grouped)
-
-    matches = []
-    for club, items in CLUB_CACHE.items():
-        if text in club:
-            matches = items[:5]
-            break
-
-    if not matches:
-        await update.message.reply_text("No matching products found.")
+async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ALLOWED_USERS:
         return
 
-    for p in matches:
-        sizes = []
-        for attr in p["attributes"]:
-            if attr["name"].lower() == "size":
-                sizes = attr["options"]
+    query = update.message.text
+    query_obj = normalize_query(query)
 
-        caption = (
-            f"*{p['name']}*\n"
-            f"Price: ₹{p['price']}\n"
-            f"Sizes: {', '.join(sizes) if sizes else 'N/A'}"
+    cache_key = f"{query_obj['type']}:{query_obj['value']}"
+    results = get_cached(cache_key)
+
+    if not results:
+        results = rank_products(PRODUCTS, query_obj)
+        set_cache(cache_key, results)
+
+    results = results[:5]
+
+    for p in results:
+        sizes = extract_sizes(p)
+        btn = InlineKeyboardButton(
+            "Get Checkout Link",
+            callback_data=p["permalink"]
         )
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    "Get Checkout Link",
-                    callback_data=f"buy|{p['permalink']}"
-                )
-            ]
-        ])
+        text = f"""🟢 {p['name']}
+₹{p['price']}
+Sizes: {', '.join(sizes) if sizes else 'N/A'}"""
 
         await update.message.reply_photo(
             photo=p["images"][0]["src"],
-            caption=caption,
-            parse_mode="Markdown",
-            reply_markup=keyboard
+            caption=text,
+            reply_markup=InlineKeyboardMarkup([[btn]])
         )
 
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    await query.message.reply_text(f"Checkout link:\n{query.data}")
 
-    action, link = query.data.split("|", 1)
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_handler))
+app.add_handler(filters.CallbackQueryHandler(button_handler))
 
-    if action == "buy":
-        await query.message.reply_text(f"Checkout link:\n{link}")
-
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
-    app.add_handler(CallbackQueryHandler(button))
-
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+app.run_polling()
