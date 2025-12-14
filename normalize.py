@@ -1,18 +1,15 @@
-CLUB_ALIASES = {
-    "barcelona": ["barca", "fc barcelona", "fcb"],
-    "real madrid": ["rm", "realmadrid"],
-    "manchester united": ["man utd", "man united", "manu"],
-    "psg": ["paris", "paris saint germain"],
-    "arsenal": ["arsenal fc"],
+# normalize.py
+
+ALIASES = {
+    "barca": "barcelona",
+    "fc barcelona": "barcelona",
+    "man utd": "manchester united",
+    "man united": "manchester united",
+    "manu": "manchester united",
+    "psg": "paris saint germain",
+    "rm": "real madrid",
 }
 
-def normalize_query(query: str) -> str:
-    query = query.lower().strip()
-
-    for canonical, aliases in CLUB_ALIASES.items():
-        if query == canonical:
-            return canonical
-        if query in aliases:
-            return canonical
-
-    return query
+def normalize_query(text: str) -> str:
+    text = text.lower().strip()
+    return ALIASES.get(text, text)
