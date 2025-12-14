@@ -1,59 +1,82 @@
-# main.py
-import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+import os
 
-from woo import fetch_products
-from normalize import normalize_query
+from wc import fetch_products
+from normalize import group_by_club
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WC_KEY = os.getenv("WC_KEY")
-WC_SECRET = os.getenv("WC_SECRET")
-WC_URL = os.getenv("WC_URL")
+
+PRODUCT_CACHE = {}
+CLUB_CACHE = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Type a club name (example: Barcelona, Man Utd, Real Madrid)"
+        "Type a club name (example: barcelona, man utd, real madrid)"
     )
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query_raw = update.message.text
-    query = normalize_query(query_raw)
+    text = update.message.text.lower()
 
-    products = fetch_products(query, WC_URL, WC_KEY, WC_SECRET)
+    if not CLUB_CACHE:
+        products = fetch_products()
+        grouped = group_by_club(products)
+        CLUB_CACHE.update(grouped)
 
-    if not products:
-        await update.message.reply_text("No products found.")
+    matches = []
+    for club, items in CLUB_CACHE.items():
+        if text in club:
+            matches = items[:5]
+            break
+
+    if not matches:
+        await update.message.reply_text("No matching products found.")
         return
 
-    for p in products:
-        title = p["name"]
-        price = p["price"]
-        image = p["images"][0]["src"] if p["images"] else None
-        checkout = p["permalink"]
-
+    for p in matches:
         sizes = []
         for attr in p["attributes"]:
             if attr["name"].lower() == "size":
                 sizes = attr["options"]
 
-        text = f"""👕 {title}
-💰 ₹{price}
-📏 Sizes: {", ".join(sizes) if sizes else "Check on site"}"""
+        caption = (
+            f"*{p['name']}*\n"
+            f"Price: ₹{p['price']}\n"
+            f"Sizes: {', '.join(sizes) if sizes else 'N/A'}"
+        )
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Get Checkout Link", url=checkout)]
+            [
+                InlineKeyboardButton(
+                    "Get Checkout Link",
+                    callback_data=f"buy|{p['permalink']}"
+                )
+            ]
         ])
 
-        if image:
-            await update.message.reply_photo(photo=image, caption=text, reply_markup=keyboard)
-        else:
-            await update.message.reply_text(text, reply_markup=keyboard)
+        await update.message.reply_photo(
+            photo=p["images"][0]["src"],
+            caption=caption,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    action, link = query.data.split("|", 1)
+
+    if action == "buy":
+        await query.message.reply_text(f"Checkout link:\n{link}")
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
+    app.add_handler(CallbackQueryHandler(button))
+
     app.run_polling()
 
 if __name__ == "__main__":
