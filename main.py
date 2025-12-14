@@ -1,26 +1,33 @@
 import os
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from dotenv import load_dotenv
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
 
-async def start(update, context):
-    await update.message.reply_text(
-        "Bot is live ✅\nSend a club or player name (example: Barcelona, Ronaldo)"
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+def start(update: Update, context):
+    update.message.reply_text(
+        "Bot is running ✅\nSend a club or player name (e.g. Barcelona, Ronaldo)"
     )
 
-async def handle_text(update, context):
+def echo(update: Update, context):
     text = update.message.text.lower()
-    await update.message.reply_text(f"You typed: {text}")
+    update.message.reply_text(f"You searched for: {text}")
 
 def main():
-    application = Application.builder().token(TOKEN).build()
+    if not TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is missing")
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-    application.run_polling()
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
+
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
